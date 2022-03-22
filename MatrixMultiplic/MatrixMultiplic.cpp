@@ -71,9 +71,7 @@ int main(int argc, char** argv) {
 	subdims[0] = 1;
 	subdims[1] = 0;
 	MPI_Cart_sub(com, subdims, &col_comm);
-
 	MPI_Cart_coords(com, rank, 2, coords);	
-
 	//prepare data
 	if (rank == 0) {
 		matrixAoriginal = new int[N * N];
@@ -92,34 +90,51 @@ int main(int argc, char** argv) {
 	matrixA = new int[submatrix_size * submatrix_size];
 	matrixB = new int[submatrix_size * submatrix_size];
 	matrixC = new int[submatrix_size * submatrix_size];
+	for (int i = 0; i < submatrix_size; i++) {
+		for (int j = 0; j < submatrix_size; j++) {
+			matrixC[i * submatrix_size + j] = 0;
+			matrixB[i * submatrix_size + j] = 0;
+			matrixA[i * submatrix_size + j] = 0;
+		}
+	}
+	MPI_Status mStatus;
+	std::cout << "resay";
 
 	// A B distribution for all processes
 	if (rank == 0) {
 		for (int i = 0; i < ndim; i++) {
 			for (int j = 0; j < ndim; j++) {
-				if (i == 0 && j == 0) {
-					continue;
-				}
-				std::cout << "RANK ONE SENDING BLOCK" << std::endl;
+				if (i + j == 0) continue;
 				prepare_block(i, j, matrixA, matrixAoriginal);
 				prepare_block(i, j, matrixB, matrixBoriginal);
-				int trank = 0;
-				int tcoords[2] = { i, j };
-				MPI_Cart_rank(com, tcoords, &trank);
-				MPI_Send(matrixA, submatrix_size * submatrix_size, MPI_DOUBLE, trank, 0, com);
-				std::cout << "sent block" << std::endl;
-				MPI_Send(matrixB, submatrix_size * submatrix_size, MPI_DOUBLE, trank, 1, com);
-				std::cout << "RANK ONE SENDING BLOCK ..." << std::endl;
+				MPI_Send(matrixA, submatrix_size * submatrix_size, MPI_DOUBLE, i * ndim + j, 1, com);
+				MPI_Send(matrixB, submatrix_size * submatrix_size, MPI_DOUBLE, i * ndim + j, 1, com);
 			}
 		}
+		std::cout << "sent blocks" << std::endl;
 		prepare_block(0, 0, matrixA, matrixAoriginal);
 		prepare_block(0, 0, matrixB, matrixBoriginal);
+
+		// HERe local mult for 0 process
+
+		for (int i = 0; i < ndim; i++) {
+			for (int j = 0; j < ndim; j++) {
+				if (i + j == 0) continue;
+				MPI_Recv(matrixC, submatrix_size * submatrix_size, MPI_DOUBLE, i * ndim + j, 1, com, &mStatus);
+				// here some functions for result
+			}
+		}
+
+		std::cout << "finalize" << std::endl;
+		delete[] matrixAoriginal;
+		delete[] matrixBoriginal;
+		delete[] matrixCoriginal;
 	}
 	else {
-		MPI_Status mStatus;
-		MPI_Recv(matrixA, submatrix_size * submatrix_size, MPI_DOUBLE, rank, 0, com, &mStatus);
-		MPI_Recv(matrixB, submatrix_size * submatrix_size, MPI_DOUBLE, rank, 1, com, &mStatus);
-		std::cout << "received" << std::endl;
+		MPI_Recv(matrixA, submatrix_size * submatrix_size, MPI_DOUBLE, 0, 1, com, &mStatus);
+		MPI_Recv(matrixB, submatrix_size * submatrix_size, MPI_DOUBLE, 0, 1, com, &mStatus);
+		// HERE Your LOGIc for multiplication and resending
+		MPI_Send(matrixC, submatrix_size * submatrix_size, MPI_DOUBLE, 0, 1, com);
 	}
 
 	
@@ -143,19 +158,14 @@ int main(int argc, char** argv) {
 		}
 		MPI_Sendrecv_replace(matrixB, submatrix_size * submatrix_size, MPI_DOUBLE, next, 0, prev, 0, col_comm, &mStatus);
 	}
-	*/
+	
 
-	if (rank == 0){
-		std::cout << "finalize" << std::endl;
-	}
+
 
 	delete[] matrixA;
 	delete[] matrixB;
 	delete[] matrixC;
-	delete[] matrixAoriginal;
-	delete[] matrixBoriginal;
-	delete[] matrixCoriginal;
-
+	*/
 	MPI_Finalize();
 	return 0;
 }
