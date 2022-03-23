@@ -1,18 +1,15 @@
-﻿#define N 1000
+﻿#define N 1500
 
 #include <stdlib.h>
 #include <iostream>
 #include "mpi.h"
 #include "math.h"
 
-int size, rank, ndim;
+int size, rank, ndim, submatrix_size;
 int ndims[2] = { 0,0 };
 int period[2] = {0, 0};
 int coords[2];
-int submatrix_size = 0;
-MPI_Comm com;
-MPI_Comm row_comm;
-MPI_Comm col_comm;
+MPI_Comm com, row_comm, col_comm;
 
 double* matrixA;
 double* matrixAt;
@@ -70,8 +67,7 @@ int main(int argc, char** argv) {
 		MPI_Abort(MPI_COMM_WORLD, 1);
 	}
 	double start = MPI_Wtime();
-	ndim = (int)sqrt(size);
-	ndims[0] = ndims[1] = ndim;
+	ndims[0] = ndims[1] = ndim = (int)sqrt(size);
 	submatrix_size = N / ndim;
 	MPI_Cart_create(MPI_COMM_WORLD, 2, ndims, period, 0, &com);
 
@@ -127,6 +123,7 @@ int main(int argc, char** argv) {
 		prepare_block(0, 0, matrixB, matrixBoriginal);
 	}
 
+	// receive A` and B`
 	if (rank != 0) {
 		MPI_Recv(matrixA, submatrix_size * submatrix_size, MPI_DOUBLE, 0, 1, com, &mStatus);
 		MPI_Recv(matrixB, submatrix_size * submatrix_size, MPI_DOUBLE, 0, 1, com, &mStatus);
@@ -136,9 +133,11 @@ int main(int argc, char** argv) {
 		for (int i = 0; i < submatrix_size * submatrix_size; i++) {
 			matrixAt[i] = matrixA[i];
 		}
+		// cast A'' matrix
 		MPI_Bcast(matrixAt, submatrix_size * submatrix_size, MPI_DOUBLE, (coords[0] + iter)%ndim, row_comm);
 		multiply_matrix();
 
+		// shift B' matrix'
 		int next = (coords[0] + 1);
 		if (coords[0] == ndim-1) {
 			next = 0;
@@ -150,10 +149,11 @@ int main(int argc, char** argv) {
 		MPI_Sendrecv_replace(matrixB, submatrix_size * submatrix_size, MPI_DOUBLE, next, 0, prev, 0, col_comm, &mStatus);
 	}
 	
+	// send C'
 	if (rank != 0) {
 		MPI_Send(matrixC, submatrix_size * submatrix_size, MPI_DOUBLE, 0, 1, com);
 	}
-
+	// gather and construct C matrix
 	if (rank == 0) {
 		populate_block(0, 0, matrixC, matrixCoriginal);
 		for (int i = 0; i < ndim; i++) {
