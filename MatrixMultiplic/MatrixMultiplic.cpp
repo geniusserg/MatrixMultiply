@@ -1,29 +1,27 @@
-﻿#define N 800
+﻿#define N 1000
 
 #include <stdlib.h>
 #include <iostream>
 #include "mpi.h"
 #include "math.h"
 
-int size, rank;
-
-int ndim;
+int size, rank, ndim;
 int ndims[2] = { 0,0 };
 int period[2] = {0, 0};
 int coords[2];
-int submatrix_size = 7;
+int submatrix_size = 0;
 MPI_Comm com;
 MPI_Comm row_comm;
 MPI_Comm col_comm;
 
-int* matrixA;
-int* matrixAt;
-int* matrixB;
-int* matrixC;
+double* matrixA;
+double* matrixAt;
+double* matrixB;
+double* matrixC;
 
-int* matrixAoriginal;
-int* matrixBoriginal;
-int* matrixCoriginal;
+double* matrixAoriginal;
+double* matrixBoriginal;
+double* matrixCoriginal;
 
 void multiply_matrix() {
 	for (int i = 0; i < submatrix_size; i++) {
@@ -35,7 +33,7 @@ void multiply_matrix() {
 	}
 }
 
-void print_matrix(int s, int* matrix) {
+void print_matrix(int s, double* matrix) {
 	for (int i = 0; i < s; i++) {
 		for (int j = 0; j < s; j++) {
 			std::cout << matrix[i * s + j] << " ";
@@ -44,7 +42,7 @@ void print_matrix(int s, int* matrix) {
 	}
 }
 
-void prepare_block(int a, int b, int* matrix, int* matrixOriginal) {
+void prepare_block(int a, int b, double* matrix, double* matrixOriginal) {
 	long long index = 0;
 	for (int i = submatrix_size * a; i < submatrix_size * (a + 1); i++) {
 		for (int j = submatrix_size * b; j < submatrix_size * (b + 1); j++) {
@@ -54,7 +52,7 @@ void prepare_block(int a, int b, int* matrix, int* matrixOriginal) {
 	}
 }
 
-void populate_block(int a, int b, int* matrix, int* matrixOriginal) {
+void populate_block(int a, int b, double* matrix, double* matrixOriginal) {
 	long long index = 0;
 	for (int i = 0; i < submatrix_size; i++) {
 		for (int j = 0; j < submatrix_size; j++) {
@@ -83,29 +81,30 @@ int main(int argc, char** argv) {
 	subdims[1] = 0;
 	MPI_Cart_sub(com, subdims, &col_comm);
 	MPI_Cart_coords(com, rank, 2, coords);	
+
 	//prepare data
 	if (rank == 0) {
 
-		matrixAoriginal = new int[N * N];
-		matrixBoriginal = new int[N * N];
-		matrixCoriginal = new int[N * N];
+		matrixAoriginal = new double[N * N];
+		matrixBoriginal = new double[N * N];
+		matrixCoriginal = new double[N * N];
 
 		for (int i = 0; i < N; i++) {
 			for (int j = 0; j < N; j++) {
 				matrixCoriginal[i * N + j] = 0;
-				matrixBoriginal[i * N + j] = 10;
-				matrixAoriginal[i * N + j] = 10;
+				matrixBoriginal[i * N + j] = 1;
+				matrixAoriginal[i * N + j] = 1;
 			}
 		}
 	}
 
-	matrixA = new int[submatrix_size * submatrix_size];
-	matrixAt = new int[submatrix_size * submatrix_size];
-	matrixB = new int[submatrix_size * submatrix_size];
-	matrixC = new int[submatrix_size * submatrix_size];
+	matrixA = new double[submatrix_size * submatrix_size];
+	matrixAt = new double[submatrix_size * submatrix_size];
+	matrixB = new double[submatrix_size * submatrix_size];
+	matrixC = new double[submatrix_size * submatrix_size];
 	for (int i = 0; i < submatrix_size; i++) {
 		for (int j = 0; j < submatrix_size; j++) {
-			matrixC[i * submatrix_size + j] = 8;
+			matrixC[i * submatrix_size + j] = 0;
 			matrixB[i * submatrix_size + j] = 0;
 			matrixA[i * submatrix_size + j] = 0;
 			matrixAt[i * submatrix_size + j] = 0;
@@ -116,12 +115,12 @@ int main(int argc, char** argv) {
 	// A B distribution for all processes
 	if (rank == 0) {
 		for (int i = 0; i < ndim; i++) {
-			for (int j = 0; j < ndim; j++) {
+			for (double j = 0; j < ndim; j++) {
 				if (i + j == 0) continue;
 				prepare_block(i, j, matrixA, matrixAoriginal);
 				prepare_block(i, j, matrixB, matrixBoriginal);
-				MPI_Send(matrixA, submatrix_size * submatrix_size, MPI_INT, i * ndim + j, 1, com);
-				MPI_Send(matrixB, submatrix_size * submatrix_size, MPI_INT, i * ndim + j, 1, com);
+				MPI_Send(matrixA, submatrix_size * submatrix_size, MPI_DOUBLE, i * ndim + j, 1, com);
+				MPI_Send(matrixB, submatrix_size * submatrix_size, MPI_DOUBLE, i * ndim + j, 1, com);
 			}
 		}
 		prepare_block(0, 0, matrixA, matrixAoriginal);
@@ -129,14 +128,15 @@ int main(int argc, char** argv) {
 	}
 
 	if (rank != 0) {
-		MPI_Recv(matrixA, submatrix_size * submatrix_size, MPI_INT, 0, 1, com, &mStatus);
-		MPI_Recv(matrixB, submatrix_size * submatrix_size, MPI_INT, 0, 1, com, &mStatus);
+		MPI_Recv(matrixA, submatrix_size * submatrix_size, MPI_DOUBLE, 0, 1, com, &mStatus);
+		MPI_Recv(matrixB, submatrix_size * submatrix_size, MPI_DOUBLE, 0, 1, com, &mStatus);
 	}
 	
 	for (int iter = 0; iter < ndim; iter++) {
-		memcpy(matrixAt, matrixA, submatrix_size * submatrix_size);
-		MPI_Bcast(matrixAt, submatrix_size * submatrix_size, MPI_INT, (coords[0] + iter)%ndim, row_comm);
-		
+		for (int i = 0; i < submatrix_size * submatrix_size; i++) {
+			matrixAt[i] = matrixA[i];
+		}
+		MPI_Bcast(matrixAt, submatrix_size * submatrix_size, MPI_DOUBLE, (coords[0] + iter)%ndim, row_comm);
 		multiply_matrix();
 
 		int next = (coords[0] + 1);
@@ -148,11 +148,10 @@ int main(int argc, char** argv) {
 			prev = ndim - 1;
 		}
 		MPI_Sendrecv_replace(matrixB, submatrix_size * submatrix_size, MPI_DOUBLE, next, 0, prev, 0, col_comm, &mStatus);
-		
 	}
 	
 	if (rank != 0) {
-		MPI_Send(matrixC, submatrix_size * submatrix_size, MPI_INT, 0, 1, com);
+		MPI_Send(matrixC, submatrix_size * submatrix_size, MPI_DOUBLE, 0, 1, com);
 	}
 
 	if (rank == 0) {
@@ -160,13 +159,13 @@ int main(int argc, char** argv) {
 		for (int i = 0; i < ndim; i++) {
 			for (int j = 0; j < ndim; j++) {
 				if (i + j == 0) continue;
-				MPI_Recv(matrixC, submatrix_size * submatrix_size, MPI_INT, i * ndim + j, 1, com, &mStatus);
+				MPI_Recv(matrixC, submatrix_size * submatrix_size, MPI_DOUBLE, i * ndim + j, 1, com, &mStatus);
 				populate_block(i, j, matrixC, matrixCoriginal);
 			}
 		}
 		delete[] matrixCoriginal;
 		double end = MPI_Wtime();
-		printf("%f", end - start);
+		std::cout << end - start;
 	}
 
 	MPI_Finalize();
